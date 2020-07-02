@@ -10,8 +10,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import math
-from scipy.fftpack import fft
-from scipy.signal import butter, lfilter, freqz
 
 file_name = input("Enter file name : ")
 
@@ -19,7 +17,8 @@ data = pd.read_csv(file_name)
 
 # Number of samplepoints
 N = len(data)
-T = 35
+Time = data['Time (s)']
+T = Time[N-1]
 t_plt = np.linspace(0, T, N, endpoint=False)
 
 fig, ax = plt.subplots(2,1)
