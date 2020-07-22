@@ -36,10 +36,11 @@ float delta_time;
 int iteration = 0;
 
 // Masukkan nilai parameter yang diinginkan di sini
-float kp = 1.0;
+float kp = 0.5;
 float kd = 0.0;
-float ki = 0.0;
-float set_flow = 500.0;
+float ki = 0.06;
+float set_flow = 100.0;
+float f_max = 500.0;
 // float frekuensi = 1.90262 * pow(set_flow, 0.98124);
 float frekuensi = 5.0;
 float sensed_flow;
@@ -70,54 +71,51 @@ void setup() {
             delay(500); // wait long enough for chip reset to complete
         }
     } while (ret != 0);
+    delay(30); // wait long enough for chip reset to complete
+
+    do {
+      Wire2.beginTransmission(ADDRESS);
+      Wire2.write(0x36);
+      Wire2.write(0x08);
+      ret = Wire2.endTransmission();
+      if (ret != 0) {
+        Serial.println("Error during write measurement mode command");
+      }
+    } while (ret != 0);
+    delay(12); // wait until measurement is available
 
     Serial.println("Time (s),Flow Rate (uL/min),Frequency,Error,U_Now,No Flow Flag");
-    delay(30); // wait long enough for chip reset to complete
 }
 
 // -----------------------------------------------------------------------------
 // The Arduino loop routine runs over and over again forever:
 // -----------------------------------------------------------------------------
 void loop() {
-  // To perform a measurement, first send 0x3608 to switch to continuous
-  // measurement mode (H20 calibration), then read 3x (2 bytes + 1 CRC byte) from the sensor.
-  // To perform a IPA based measurement, send 0x3615 instead.
-  // Check datasheet for available measurement commands.
-  Wire2.beginTransmission(ADDRESS);
-  Wire2.write(0x36);
-  Wire2.write(0x08);
-  ret = Wire2.endTransmission();
-  if (ret != 0) {
-    Serial.println("Error during write measurement mode command");
-  } else {
-    delay(1000);
     while (!stop) {
+        // Hitung waktu sampling
         sample_time = float(millis());  // Mendapatkan waktu pada saat tegangan berhasil dicuplik
         delta_time = sample_time - last_time;   // Menghitung beda waktu antara waktu cuplik sekarang dengan waktu cuplik sebelumnya
         last_time = sample_time; // Menyimpan waktu cuplik sekarang agar dapat digunakan di pencuplikan berikutnya
         sample_time = delta_time / 1000.0;
-        sensed_flow = get_flow_raw();
-        
-        if ((sensed_flow >= (-6.0)) && (sensed_flow <= 6.0)) {
-          no_flow = true;
-        } else no_flow = false;
 
+        // Dapatkan nilai laju aliran saat ini
+        sensed_flow = get_flow_raw();
+
+        // Hitung PID
         error_now = set_flow - sensed_flow;  // Menghitung nilai error saat ini
-        if ((iteration > 2) && (!no_flow)) {    // Menjaga-jaga agar nilai u_now tidak "kacau" pada saat mikrokontroler menyala
+        if (iteration > 2) {    // Menjaga-jaga agar nilai u_now tidak "kacau" pada saat mikrokontroler menyala
           // Perhitungan nilai sinyal PWM dengan PID
           u_now = (error_now * (kp + (ki*sample_time/2.0) + (kd/sample_time))) + (error_past_1 * ((-kp) + (ki*sample_time/2.0) - (kd/sample_time))) + (error_past_2 * (kd/sample_time)) + last_u;
-        } else if ((iteration > 2) && (no_flow)) {
-          u_now = 5;
         } else {
           u_now = 0;
         }
 
-        if (frekuensi+u_now > 2000.0) {
-            frekuensi = 2000.0;
+        // Ubah nilai frekuensi
+        if (frekuensi+u_now > f_max) {
+            frekuensi = f_max;
         } else if (frekuensi+u_now <= 5.0) {
             frekuensi = 5.0;
         } else frekuensi += u_now;
-
         Timer1.setPeriod(1000000 / (2 * (unsigned long)frekuensi));
 
         // Menyimpan nilai-nilai saat ini agar dapat digunakan di perhitungan selanjutnya
@@ -125,9 +123,10 @@ void loop() {
         error_past_1 = error_now;
         error_past_2 = error_past_1;
 
+        // Catat nilai-nilai pengukuran
         Serial.print(millis()/1000.0);
         Serial.print(",");
-        Serial.print(get_flow_raw());
+        Serial.print(sensed_flow);
         Serial.print(",");
         Serial.print(frekuensi);
         Serial.print(",");
@@ -143,6 +142,8 @@ void loop() {
         if (digitalRead(PA12) == LOW) {
             stop = true;
         }
+
+        delay(5);
     }
     // To stop the continuous measurement, first send 0x3FF9.
     if (stop) {
@@ -158,7 +159,6 @@ void loop() {
 
         delay(999999);
     }
-  }
 }
 
 float get_flow_raw() {  
