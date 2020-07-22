@@ -1,10 +1,9 @@
 # PID Controller for Peristaltic Pump with Stepper Motor
 
-Program untuk mengendalikan pompa peristaltik dengan motor stepper dengan menggunakan algoritma PID. Anda dapat mengubah parameter-parameter yang dapat diubah seperti konstanta Kp, Ki, Kd, atau sample time.
+Program untuk mengendalikan pompa peristaltik dengan motor stepper dengan menggunakan algoritma PID. Anda dapat mengubah parameter-parameter yang dapat diubah seperti nilai *set point* laju aliran, konstanta Kp, Ki, dan Kd. Pompa tersebut digunakan untuk pengaliran fluida dalam aplikasi *microfluidics* (cairan dalam skala mikroliter).
 
-Dirancang untuk sistem dengan mikrokontroler STM32F103C6 (Blue Pill) dan sensor Sensirion SLF3S-1300F
+Dirancang untuk sistem dengan mikrokontroler STM32F103C6 (Blue Pill), FT232RL USB-to-TTL (atau sejenisnya) dan sensor Sensirion SLF3S-1300F
 
 Data dapat direkam dengan menggunakan PuTTY atau aplikasi perekam data dari Serial Monitor yang lain dan disimpan dalam bentuk CSV.
 
-Untuk membuat plot dari data yang telah diukur, jalankan file Plot.py dengan Python, lalu masukkan nama file hasil perekaman data yang telah dibuat.
-(pastikan telah meng-install library yang diperlukan terlebih dahulu pada requirements.txt)
+Untuk membuat plot dari data yang telah diukur, jalankan file Plot.py dengan Python dengan perintah `python Plot.py file_csv` (pastikan telah meng-install library yang diperlukan terlebih dahulu pada requirements.txt)
