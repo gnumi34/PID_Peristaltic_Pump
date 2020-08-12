@@ -34,13 +34,17 @@ float frekuensi = 5.0;
 float kp = 0.6;
 float kd = 0.0;
 float ki = 0.05;
-float set_flow = 100.0;
+float set_flow = 150.0;
 
 // Variabel perhitungan flow rate rata-rata
 float ema_a = 0.1;
 float ema = 0.0;
 float count = 0.0;
 float mean = 0.0;
+
+// Variabel untuk Totalizer
+float last_flow = 0.0;
+float totalizer = 0.0; // in uL
 
 TwoWire Wire2 (2,0,100000);
 
@@ -60,7 +64,7 @@ void setup() {
   soft_reset();
   start_measure();
 
-  Serial.println("Time (s),Flow Rate (uL/min),Frequency,Error,U_Now,Moving Average Flow Rate (uL/min),Average Flow Rate (uL/min)");
+  Serial.println("Time (s),Flow Rate (uL/min),Frequency,Error,U_Now,Moving Average Flow Rate (uL/min),Average Flow Rate (uL/min), Volume Dispensed (uL)");
 }
 
 void loop() {
@@ -74,16 +78,16 @@ void loop() {
     // Dapatkan nilai laju aliran saat ini
     sensed_flow = get_flow();
 
+    // Hitung jumlah volume air
+    totalizer += ((sensed_flow + last_flow) / 2.0 * (sample_time) / 60.0);
+    last_flow = sensed_flow;
+
     // Hitung laju aliran rata-rata berjalan
     ema = EMA_function(ema_a, sensed_flow, ema);
 
     // Hitung laju aliran rata-rata setiap saat
     count++;
     mean = mean + (sensed_flow - mean)/count;
-    
-    if (volume > 100.0) {
-      stop = true;
-    }
 
     // Hitung PID
     error_now = set_flow - sensed_flow;  // Menghitung nilai error saat ini
@@ -122,7 +126,7 @@ void loop() {
     Serial.print(",");
     Serial.print(mean);
     Serial.print(",");
-    Serial.print(volume);
+    Serial.print(totalizer);
     Serial.println("");
 
     iteration++;
@@ -131,7 +135,7 @@ void loop() {
         stop = true;
     }
 
-    delay(5);
+    delay(5); // Beri waktu untuk sistem agar hasil pengendalian stabil stabil
   }
 
   if (stop) {
