@@ -27,14 +27,14 @@ float sample_time;
 float last_time = 0.0;
 float delta_time;
 int iteration = 0;
-float f_max = 400.0;
-float frekuensi = 5.0;
+float f_max;
+float frekuensi = 25.0;
 
 // Masukkan nilai parameter yang diinginkan di sini
-float kp = 0.6;
+float kp = 0.8;
 float kd = 0.0;
-float ki = 0.05;
-float set_flow = 150.0;
+float ki = 0.5;
+float set_flow = 100.0;
 
 // Variabel perhitungan flow rate rata-rata
 float ema_a = 0.1;
@@ -45,6 +45,8 @@ float mean = 0.0;
 // Variabel untuk Totalizer
 float last_flow = 0.0;
 float totalizer = 0.0; // in uL
+
+float time;
 
 TwoWire Wire2 (2,0,100000);
 
@@ -64,7 +66,17 @@ void setup() {
   soft_reset();
   start_measure();
 
-  Serial.println("Time (s),Flow Rate (uL/min),Frequency,Error,U_Now,Moving Average Flow Rate (uL/min),Average Flow Rate (uL/min), Volume Dispensed (uL)");
+  // Set maksimum frekuensi berdasarkan set point
+  if (set_flow > 180.0) {
+    f_max = 800.0;
+  } else if (set_flow > 140.0) {
+    f_max = 600.0;
+  }
+  else {
+    f_max = 400.0;
+  }
+
+  Serial.println("Time (s),Flow Rate (uL/min),Frequency,Error,U_Now,Moving Average Flow Rate (uL/min),Average Flow Rate (uL/min),Volume Dispensed (uL),test_vol");
 }
 
 void loop() {
@@ -78,7 +90,7 @@ void loop() {
     // Dapatkan nilai laju aliran saat ini
     sensed_flow = get_flow();
 
-    // Hitung jumlah volume air
+    // Hitung jumlah volume fluida
     totalizer += ((sensed_flow + last_flow) / 2.0 * (sample_time) / 60.0);
     last_flow = sensed_flow;
 
@@ -87,8 +99,8 @@ void loop() {
 
     // Hitung laju aliran rata-rata setiap saat
     count++;
-    mean = mean + (sensed_flow - mean)/count;
-
+    mean = mean + (sensed_flow - mean) / count;
+    
     // Hitung PID
     error_now = set_flow - sensed_flow;  // Menghitung nilai error saat ini
     if (iteration > 2) {    // Menjaga-jaga agar nilai u_now tidak "kacau" pada saat mikrokontroler menyala
@@ -111,8 +123,9 @@ void loop() {
     error_past_1 = error_now;
     error_past_2 = error_past_1;
 
+    time = millis()/1000.0;
     // Catat nilai-nilai pengukuran
-    Serial.print(millis()/1000.0);
+    Serial.print(time, 3);
     Serial.print(",");
     Serial.print(sensed_flow);
     Serial.print(",");
@@ -127,10 +140,16 @@ void loop() {
     Serial.print(mean);
     Serial.print(",");
     Serial.print(totalizer);
+    Serial.print(",");
+    Serial.print(mean / 60.0 * time);
     Serial.println("");
 
     iteration++;
 
+    // if (totalizer > 100.0) {
+    //   stop = true;
+    //}
+    
     if (digitalRead(PA12) == LOW) {
         stop = true;
     }
