@@ -2,3 +2,5 @@
 /plot/*.png
 /plot/*.csv
 /.vscode/**
+/plot/old/*.png
+/plot/old/*.csv
