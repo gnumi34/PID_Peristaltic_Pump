@@ -10,6 +10,7 @@ import sys
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import re
 import math
 
 # Read file
@@ -19,11 +20,8 @@ except IndexError:
     raise SystemExit(f"usage: {sys.argv[0]} csv_file")
 
 data = pd.read_csv(file_name)
-
-if not file_name[:3].isnumeric():
-    flow_rate_sp = float(file_name[:2])
-else:
-    flow_rate_sp = float(file_name[:3])
+re = re.search(r"^([-0-9]*)", file_name)
+flow_rate_sp = int(re[1])
 
 # Number of samplepoints
 N = len(data)
@@ -35,8 +33,6 @@ print(f"File name: {file_name}")
 print(f"Set-point = {flow_rate_sp} uL/min")
 print(f"Time elapsed = {T} s")
 print("Processing data.....\n")
-
-
 
 # Calculate Average Flow Rate
 print("Calculating average flow rate based on realtime flow rate measurement..")
@@ -102,16 +98,29 @@ min_time = 0
 
 if 'Average Flow Rate (uL/min)' in data:
     for i in range(N):
-        if (data['Time (s)'][i] >= 0.2) and (data['Average Flow Rate (uL/min)'][i] >= (0.9 * flow_rate_sp)):
-            max_time = data['Time (s)'][i]
-            print(f'max_time = {max_time} s')
-            break
+        if (flow_rate_sp > 0):
+            if (data['Time (s)'][i] >= 0.2) and (data['Average Flow Rate (uL/min)'][i] >= (0.9 * flow_rate_sp)):
+                max_time = data['Time (s)'][i]
+                print(f'max_time = {max_time} s')
+                break
+        else:
+            if (data['Time (s)'][i] >= 0.2) and (data['Average Flow Rate (uL/min)'][i] <= (0.9 * flow_rate_sp)):
+                max_time = data['Time (s)'][i]
+                print(f'max_time = {max_time} s')
+                break
 
     for i in range(N):
-        if (data['Time (s)'][i] >= 0.2) and (data['Average Flow Rate (uL/min)'][i] >= (0.1 * flow_rate_sp)):
-            min_time = data['Time (s)'][i]
-            print(f'min_time = {min_time} s')
-            break
+        if (flow_rate_sp > 0):
+            if (data['Time (s)'][i] >= 0.2) and (data['Average Flow Rate (uL/min)'][i] >= (0.1 * flow_rate_sp)):
+                min_time = data['Time (s)'][i]
+                print(f'min_time = {min_time} s')
+                break
+        else:
+            if (data['Time (s)'][i] >= 0.2) and (data['Average Flow Rate (uL/min)'][i] <= (0.1 * flow_rate_sp)):
+                min_time = data['Time (s)'][i]
+                print(f'min_time = {min_time} s')
+                break
+
     if (max_time):
         print(f'Rise time = {max_time - min_time} s\n')
     else:
@@ -193,19 +202,19 @@ if int(sys.argv[2]) == 1:
     plt.show()
 elif int(sys.argv[2]) == 2:
     fig, ax = plt.subplots(1,1)
-    ax[0].set_title("Flow Rate Measurement")
-    ax[0].plot(t_plt, data['Flow Rate (uL/min)'], 'r-', label='Measured Flow Rate')
+    ax.set_title("Flow Rate Measurement")
+    ax.plot(t_plt, data['Flow Rate (uL/min)'], 'r-', label='Measured Flow Rate')
 
     if 'Moving Average Flow Rate (uL/min)' in data:
-        ax[0].plot(t_plt, data['Moving Average Flow Rate (uL/min)'], 'b-', label='Moving Average Flow Rate')
+        ax.plot(t_plt, data['Moving Average Flow Rate (uL/min)'], 'b-', label='Moving Average Flow Rate')
 
     if 'Average Flow Rate (uL/min)' in data:
-        ax[0].plot(t_plt, data['Average Flow Rate (uL/min)'], 'g-', label='Instantenous Average Flow Rate')
+        ax.plot(t_plt, data['Average Flow Rate (uL/min)'], 'g-', label='Instantenous Average Flow Rate')
 
-    ax[0].set_xlabel('Time [sec]')
-    ax[0].set_ylabel('Flow Rate [uL/min]')
-    ax[0].grid(True)
-    ax[0].legend()
+    ax.set_xlabel('Time [sec]')
+    ax.set_ylabel('Flow Rate [uL/min]')
+    ax.grid(True)
+    ax.legend()
 
     fig.tight_layout()
 
