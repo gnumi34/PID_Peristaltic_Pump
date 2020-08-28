@@ -34,8 +34,10 @@ float frekuensi = f_min;
 // Masukkan nilai parameter yang diinginkan di sini
 float kp = 0.5;
 float kd = 0.0;
-float ki = 0.1;
-float set_flow = 25.0;
+float ki = 0.09;
+float set_flow = 100.0;
+float realtime_flow = set_flow;
+float last_check = 0.0;
 
 // Variabel perhitungan flow rate rata-rata
 float ema_a = 0.1;
@@ -72,7 +74,7 @@ void setup() {
 
   f_max = check_max_freq();  
 
-  Serial.println("Time (s),Flow Rate (uL/min),Frequency,Error,U_Now,Moving Average Flow Rate (uL/min),Average Flow Rate (uL/min),Volume Dispensed (uL),No Flow Flag");
+  Serial.println("Time (s),Flow Rate (uL/min),Frequency,Error,U_Now,Moving Average Flow Rate (uL/min),Average Flow Rate (uL/min),Volume Dispensed (uL),No Flow Flag,Set Point");
 }
 
 void loop() {
@@ -85,6 +87,10 @@ void loop() {
 
     // Dapatkan nilai laju aliran saat ini
     get_flow();
+
+    if ((aux_value & 1) == 1) {
+      scaled_flow_value = 0.0;
+    }
 
     // Hitung jumlah volume fluida
     if (set_flow > 0) {
@@ -103,12 +109,12 @@ void loop() {
     mean = mean + (scaled_flow_value - mean) / count;
     
     // Hitung PID
-    error_now = set_flow - scaled_flow_value;  // Menghitung nilai error saat ini
+    error_now = realtime_flow - scaled_flow_value;  // Menghitung nilai error saat ini
     if ((iteration > 2) && ((aux_value & 1) != 1)) {    // Menjaga-jaga agar nilai u_now tidak "kacau" pada saat mikrokontroler menyala
       // Perhitungan nilai sinyal PWM dengan PID
       u_now = (error_now * (kp + (ki*sample_time/2.0) + (kd/sample_time))) + (error_past_1 * ((-kp) + (ki*sample_time/2.0) - (kd/sample_time))) + (error_past_2 * (kd/sample_time)) + last_u;
     } else {
-      u_now = 0;
+      u_now = u_now;
     }
 
     // Ubah nilai frekuensi
@@ -152,13 +158,25 @@ void loop() {
     Serial.print(totalizer);
     Serial.print(",");
     Serial.print(aux_value);
+    Serial.print(",");
+    Serial.print(realtime_flow);
     Serial.println("");
 
     iteration++;
 
-    // if (totalizer > 100.0) {
-    //   stop = true;
-    //}
+    if (((time - last_check) > 1.0) && ((aux_value & 1) != 1)) {
+      if (mean < set_flow) {
+        realtime_flow += 1.0;
+      }
+      last_check = time;
+    }
+    if (mean > set_flow) {
+      realtime_flow = set_flow;
+    }
+
+    if (totalizer > (set_flow * 2)) {
+       stop = true;
+    }
     
     if (digitalRead(PA12) == LOW) {
         stop = true;
