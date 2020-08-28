@@ -25,15 +25,18 @@ if not file_name[:3].isnumeric():
 else:
     flow_rate_sp = float(file_name[:3])
 
-print(f"File name: {file_name}")
-print(f"Set-point = {flow_rate_sp}")
-print("Processing data.....\n")
-
 # Number of samplepoints
 N = len(data)
 Time = data['Time (s)']
 T = Time[N-1]
 t_plt = np.linspace(0, T, N, endpoint=False)
+
+print(f"File name: {file_name}")
+print(f"Set-point = {flow_rate_sp} uL/min")
+print(f"Time elapsed = {T} s")
+print("Processing data.....\n")
+
+
 
 # Calculate Average Flow Rate
 print("Calculating average flow rate based on realtime flow rate measurement..")
@@ -53,10 +56,10 @@ count_min = 0
 count_max = 0
 
 for i in range(N):
-    if data['Flow Rate (uL/min)'][i] >= flow_rate_sp:
+    if data['Flow Rate (uL/min)'][i] > flow_rate_sp:
         avg_max += data['Flow Rate (uL/min)'][i]
         count_max += 1
-    else:
+    elif data['Flow Rate (uL/min)'][i] < flow_rate_sp:
         avg_min += data['Flow Rate (uL/min)'][i]
         count_min += 1
 
@@ -109,8 +112,10 @@ if 'Average Flow Rate (uL/min)' in data:
             min_time = data['Time (s)'][i]
             print(f'min_time = {min_time} s')
             break
-
-    print(f'Rise time = {max_time - min_time} s\n')
+    if (max_time):
+        print(f'Rise time = {max_time - min_time} s\n')
+    else:
+        print("Average flow rate doesn't rise into 90% set-point, cannot calculate rise time.\n")
 else:
     print("Realtime Average Flow Rate data is not found. Skipping..\n")
 
@@ -119,8 +124,10 @@ print("Calculating dispensed volume using realtime flow rate measurement..")
 totalizer = 0.0
 last_flow = 0.0
 last_time = 0.0
+vol_dispensed = []
 for i in range(N):
     totalizer += (last_flow + data['Flow Rate (uL/min)'][i]) / 2.0 * (data['Time (s)'][i] - last_time) / 60.0
+    vol_dispensed.append(totalizer)
     last_flow = data['Flow Rate (uL/min)'][i]
     last_time = data['Time (s)'][i]
 
@@ -130,43 +137,118 @@ print(f"Dispensed volume in real-time = {totalizer:.5f} uL\n")
 print("Calculating dispensed volume using realtime average flow rate measurement..")
 totalizer_avg = 0.0
 last_time = 0.0
+for i in range(N):
+    totalizer_avg += average_fr / 60.0 * (data['Time (s)'][i] - last_time)
+    last_time = data['Time (s)'][i]
+
+print(f"Dispensed volume in average = {totalizer_avg:.5f} uL\n")
+
+# Calculate dispensed volume using realtime average flow rate
+print("Calculating dispensed volume using realtime average flow rate measurement..")
+totalizer_avg = 0.0
+last_time = 0.0
 if 'Average Flow Rate (uL/min)' in data:
     for i in range(N):
         totalizer_avg += data['Average Flow Rate (uL/min)'][i] / 60.0 * (data['Time (s)'][i] - last_time)
         last_time = data['Time (s)'][i]
 else:
-    print("Realtime average flow rate data is not found. Calculating using calculated average flow rate..")
-    for i in range(N):
-        totalizer_avg += average_fr / 60.0 * (data['Time (s)'][i] - last_time)
-        last_time = data['Time (s)'][i]
+    print("Realtime average flow rate data is not found.")
 
-print(f"Dispensed volume in average = {totalizer_avg:.5f} uL\n")
+print(f"Dispensed volume in real time average = {totalizer_avg:.5f} uL\n")
 
 # Plot data
 print("Plotting data..")
-fig, ax = plt.subplots(2,1)
-ax[0].set_title("Flow Rate Measurement")
-ax[0].plot(t_plt, data['Flow Rate (uL/min)'], 'r-', label='Measured Flow')
+if int(sys.argv[2]) == 1:
+    fig, ax = plt.subplots(2,1)
+    ax[0].set_title("Flow Rate Measurement")
+    ax[0].plot(t_plt, data['Flow Rate (uL/min)'], 'r-', label='Measured Flow Rate')
 
-if 'Moving Average Flow Rate (uL/min)' in data:
-    ax[0].plot(t_plt, data['Moving Average Flow Rate (uL/min)'], 'b-', label='Moving Average Flow')
+    if 'Moving Average Flow Rate (uL/min)' in data:
+        ax[0].plot(t_plt, data['Moving Average Flow Rate (uL/min)'], 'b-', label='Moving Average Flow Rate')
 
-if 'Average Flow Rate (uL/min)' in data:
-    ax[0].plot(t_plt, data['Average Flow Rate (uL/min)'], 'g-', label='Instantenous Average Flow Rate')
+    if 'Average Flow Rate (uL/min)' in data:
+        ax[0].plot(t_plt, data['Average Flow Rate (uL/min)'], 'g-', label='Instantenous Average Flow Rate')
 
-ax[0].set_xlabel('Time [sec]')
-ax[0].set_ylabel('Flow Rate [uL/min]')
-ax[0].grid(True)
-ax[0].legend()
+    ax[0].set_xlabel('Time [sec]')
+    ax[0].set_ylabel('Flow Rate [uL/min]')
+    ax[0].grid(True)
+    ax[0].legend()
 
-ax[1].set_title("Control Measurement")
-ax[1].plot(t_plt, data['Error'], 'g-', label='Error')
-ax[1].plot(t_plt, data['Frequency'], 'b-', label='Motor Step Frequency')
-ax[1].set_xlabel('Time [sec]')
-ax[1].set_ylabel('Frequency [Hz]/Flow Rate')
-ax[1].grid(True)
-ax[1].legend()
-fig.tight_layout()
+    ax[1].set_title("Dispensed Volume")
+    if "Volume Dispensed (uL)" in data:
+        ax[1].plot(t_plt, data["Volume Dispensed (uL)"], 'b-', label='Volume Dispensed')
+    else:
+        ax[1].plot(t_plt, vol_dispensed, 'b-', label='Volume Dispensed')
 
-plt.show()
+    if "test_vol" in data:
+        ax[1].plot(t_plt, data["test_vol"], 'r-', label='Volume Dispensed (from average)')
+
+    ax[1].set_xlabel('Time [sec]')
+    ax[1].set_ylabel('Volume [uL]')
+    ax[1].grid(True)
+    ax[1].legend()
+
+    fig.tight_layout()
+
+    plt.show()
+elif int(sys.argv[2]) == 2:
+    fig, ax = plt.subplots(1,1)
+    ax[0].set_title("Flow Rate Measurement")
+    ax[0].plot(t_plt, data['Flow Rate (uL/min)'], 'r-', label='Measured Flow Rate')
+
+    if 'Moving Average Flow Rate (uL/min)' in data:
+        ax[0].plot(t_plt, data['Moving Average Flow Rate (uL/min)'], 'b-', label='Moving Average Flow Rate')
+
+    if 'Average Flow Rate (uL/min)' in data:
+        ax[0].plot(t_plt, data['Average Flow Rate (uL/min)'], 'g-', label='Instantenous Average Flow Rate')
+
+    ax[0].set_xlabel('Time [sec]')
+    ax[0].set_ylabel('Flow Rate [uL/min]')
+    ax[0].grid(True)
+    ax[0].legend()
+
+    fig.tight_layout()
+
+    plt.show()
+elif int(sys.argv[2]) == 3:
+    fig, ax = plt.subplots(3,1)
+    ax[0].set_title("Flow Rate Measurement")
+    ax[0].plot(t_plt, data['Flow Rate (uL/min)'], 'r-', label='Realtime Flow Rate')
+
+    if 'Moving Average Flow Rate (uL/min)' in data:
+        ax[0].plot(t_plt, data['Moving Average Flow Rate (uL/min)'], 'b-', label='Moving Average Flow Rate')
+
+    if 'Average Flow Rate (uL/min)' in data:
+        ax[0].plot(t_plt, data['Average Flow Rate (uL/min)'], 'g-', label='Instantenous Average Flow Rate')
+
+    ax[0].set_xlabel('Time [sec]')
+    ax[0].set_ylabel('Flow Rate [uL/min]')
+    ax[0].grid(True)
+    ax[0].legend()
+
+    ax[1].set_title("Control Measurement")
+    ax[1].plot(t_plt, data['Error'], 'g-', label='Error')
+    ax[1].plot(t_plt, data['Frequency'], 'b-', label='Motor Step Frequency')
+    ax[1].set_xlabel('Time [sec]')
+    ax[1].set_ylabel('Frequency [Hz]/Flow Rate')
+    ax[1].grid(True)
+    ax[1].legend()
+
+    ax[2].set_title("Dispensed Volume")
+    if "Volume Dispensed (uL)" in data:
+        ax[2].plot(t_plt, data["Volume Dispensed (uL)"], 'b-', label='Volume Dispensed')
+    else:
+        ax[2].plot(t_plt, vol_dispensed, 'b-', label='Volume Dispensed')
+
+    if "test_vol" in data:
+        ax[2].plot(t_plt, data["test_vol"], 'r-', label='Volume Dispensed (from average)')
+
+    ax[2].set_xlabel('Time [sec]')
+    ax[2].set_ylabel('Volume [uL]')
+    ax[2].grid(True)
+    ax[2].legend()
+
+    fig.tight_layout()
+
+    plt.show()
 print("Data processing is completed. Exiting..")
