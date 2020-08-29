@@ -1,7 +1,46 @@
-#include <Wire.h> // Arduino library for I2C
+/** Program pengendali pompa peristaltik dengan PID **/
+
+/** Keterangan variabel yang dapat diubah:
+ * kp : konstanta proporsional
+ * kd : konstanda derivatif
+ * ki : konstanta integral
+ * f_min : frekuensi minimum pompa
+ * set_flow : set point laju aliran
+**/
+
+/** Keterangan fungsi:
+ * void init_timer() : inisialisasi timer
+ * void get_flow() : mendapatkan data laju aliran dan data air-in-line flag dari sensor
+ * void soft_reset() : melakukan soft reset pada sensor
+ * void start_measure() : memberikan perintah memulai pengukuran
+ * void pumpStepSignal() : memberikan sinyal untuk pompa peristaltik jenis stepper
+ * void pid_control() : algoritma pengendali PID utama (beserta perhitungan volume dan rata-rata laju aliran)
+ * float check_max_freq() : melakukan pengecekan frekuensi maksimum pompa yang diperbolehkan berdasarkan nilai set point
+ * float EMA_function(float alpha, float latest, float stored) : fungsi untuk mendapatkan data Exponential Moving Average
+ * void check_set_point() : melakukan pengecekan dan pertambahan nilai set point untuk mempercepat sistem menuju set point
+ * void write_data() : melakukan penulisan data-data yang ingin diukur pada saluran serial
+ * void stop_sensor_and_pump() : melakukan penghentian pengukuran pada sensor dan penghentian pompa peristaltik
+**/
+
+/** Variabel yang dapat diambil datanya:
+ * time : waktu terkini pengukuran
+ * scaled_flow_value : laju aliran terukur setiap saat
+ * frekuensi : frekuensi setiap saat
+ * error_now : nilai error kontrol (set_point - laju aliran terukur)
+ * u_now : nilai kontrol yang akan diberikan untuk frekuensi pompa
+ * ema : data Exponential Moving Average dari laju aliran
+ * mean : nilai rata-rata laju aliran
+ * totalizer : nilai volume yang telah dialirkan oleh sistem
+ * (aux_value & 1) : Tanda adanya bubble pada saluran aliran fluida
+**/
+
+/** belum ada pin disable driver motor stepper **/
+
+#include <Wire.h>
 #include <math.h>
 
 #define PUMP_STEP PB8
+#define PUMP_DIR PB7
 
 int ret;
 bool stop = false;
@@ -29,13 +68,12 @@ float delta_time;
 int iteration = 0;
 float f_max;
 float f_min = 25.0;
-float frekuensi = f_min;
+float frekuensi = 5;
 
 // Masukkan nilai parameter yang diinginkan di sini
-float kp = 0.5;
-float kd = 0.0;
-float ki = 0.09;
-float set_flow = 100.0;
+float kp = 0.1;
+float ki = 0.0075;
+float set_flow = 150.0;
 float realtime_flow = set_flow;
 float last_check = 0.0;
 
@@ -59,14 +97,41 @@ void get_flow();
 void soft_reset();
 void start_measure();
 void pumpStepSignal();
+void pid_control();
 float check_max_freq();
 float EMA_function(float alpha, float latest, float stored);
+void check_set_point();
+void write_data();
+void stop_sensor_and_pump();
 
 void setup() {
   Serial.begin(115200); // initialize serial communication
   Wire2.begin();       // join i2c bus (address optional for master)
   pinMode(PA12, INPUT_PULLUP);
   pinMode(PUMP_STEP, OUTPUT); // STEP input
+  pinMode(PUMP_DIR, OUTPUT); // DIR input
+
+  if (set_flow < 0) {
+    digitalWrite(PUMP_DIR, HIGH);
+  }
+  else if (set_flow > 0) {
+    digitalWrite(PUMP_DIR, LOW);
+  }
+
+  if (set_flow < 100.0) {
+    kp = 0.2;
+  }
+  else {
+    kp = 0.4;
+  }
+
+  if (set_flow < 50) {
+    ki = 0.2;
+  }
+
+  if (set_flow >= 90) {
+    ki = (0.00886 * set_flow) - 0.70714;
+  }
 
   init_timer();
   soft_reset();
@@ -74,129 +139,26 @@ void setup() {
 
   f_max = check_max_freq();  
 
-  Serial.println("Time (s),Flow Rate (uL/min),Frequency,Error,U_Now,Moving Average Flow Rate (uL/min),Average Flow Rate (uL/min),Volume Dispensed (uL),No Flow Flag,Set Point");
+  Serial.println("Time (s),Flow Rate (uL/min),Frequency,Error,U_Now,Moving Average Flow Rate (uL/min),Average Flow Rate (uL/min),Volume Dispensed (uL),Bubble Flag,Realtime SP");
 }
 
 void loop() {
   while (!stop) {
-    // Hitung waktu sampling
-    sample_time = float(millis());  // Mendapatkan waktu pada saat tegangan berhasil dicuplik
-    delta_time = sample_time - last_time;   // Menghitung beda waktu antara waktu cuplik sekarang dengan waktu cuplik sebelumnya
-    last_time = sample_time; // Menyimpan waktu cuplik sekarang agar dapat digunakan di pencuplikan berikutnya
-    sample_time = delta_time / 1000.0;
-
-    // Dapatkan nilai laju aliran saat ini
-    get_flow();
-
-    if ((aux_value & 1) == 1) {
-      scaled_flow_value = 0.0;
-    }
-
-    // Hitung jumlah volume fluida
-    if (set_flow > 0) {
-      totalizer += ((scaled_flow_value + last_flow) / 2.0 * (sample_time) / 60.0);
-    }
-    else if (set_flow < 0) {
-      totalizer -= ((scaled_flow_value + last_flow) / 2.0 * (sample_time) / 60.0);
-    }
-    last_flow = scaled_flow_value;
-
-    // Hitung laju aliran rata-rata berjalan
-    ema = EMA_function(ema_a, scaled_flow_value, ema);
-
-    // Hitung laju aliran rata-rata setiap saat
-    count++;
-    mean = mean + (scaled_flow_value - mean) / count;
-    
-    // Hitung PID
-    error_now = realtime_flow - scaled_flow_value;  // Menghitung nilai error saat ini
-    if ((iteration > 2) && ((aux_value & 1) != 1)) {    // Menjaga-jaga agar nilai u_now tidak "kacau" pada saat mikrokontroler menyala
-      // Perhitungan nilai sinyal PWM dengan PID
-      u_now = (error_now * (kp + (ki*sample_time/2.0) + (kd/sample_time))) + (error_past_1 * ((-kp) + (ki*sample_time/2.0) - (kd/sample_time))) + (error_past_2 * (kd/sample_time)) + last_u;
-    } else {
-      u_now = u_now;
-    }
-
-    // Ubah nilai frekuensi
-    if (set_flow > 0) {
-      if (frekuensi + u_now > f_max) {
-          frekuensi = f_max;
-      } else if (frekuensi + u_now <= f_min) {
-          frekuensi = f_min;
-      } else frekuensi += u_now;
-      Timer1.setPeriod(1000000 / (2 * (unsigned long)frekuensi));
-    } else if (set_flow < 0) {
-      if (frekuensi - u_now > f_max) {
-          frekuensi = f_max;
-      } else if (frekuensi - u_now <= f_min) {
-          frekuensi = f_min;
-      } else frekuensi -= u_now;
-      Timer1.setPeriod(1000000 / (2 * (unsigned long)frekuensi));
-    }
-
-    // Menyimpan nilai-nilai saat ini agar dapat digunakan di perhitungan selanjutnya
-    last_u = u_now;
-    error_past_1 = error_now;
-    error_past_2 = error_past_1;
-
-    time = millis()/1000.0;
-    // Catat nilai-nilai pengukuran
-    Serial.print(time, 3);
-    Serial.print(",");
-    Serial.print(scaled_flow_value);
-    Serial.print(",");
-    Serial.print(frekuensi);
-    Serial.print(",");
-    Serial.print(error_now);
-    Serial.print(",");
-    Serial.print(u_now);
-    Serial.print(",");
-    Serial.print(ema);
-    Serial.print(",");
-    Serial.print(mean);
-    Serial.print(",");
-    Serial.print(totalizer);
-    Serial.print(",");
-    Serial.print(aux_value);
-    Serial.print(",");
-    Serial.print(realtime_flow);
-    Serial.println("");
-
-    iteration++;
-
-    if (((time - last_check) > 1.0) && ((aux_value & 1) != 1)) {
-      if (mean < set_flow) {
-        realtime_flow += 1.0;
-      }
-      last_check = time;
-    }
-    if (mean > set_flow) {
-      realtime_flow = set_flow;
-    }
-
-    if (totalizer > (set_flow * 2)) {
-       stop = true;
-    }
+    pid_control();
+    write_data();
+ 
+    // Function for volume check
+    // if (totalizer > set_flow) {
+    //   stop = true;
+    // }
     
     if (digitalRead(PA12) == LOW) {
         stop = true;
     }
-
-    delay(5); // Beri waktu untuk sistem agar hasil pengendalian stabil stabil
   }
 
   if (stop) {
-    // To stop the continuous measurement, first send 0x3FF9.
-    Wire2.beginTransmission(ADDRESS);
-    Wire2.write(0x3F);
-    Wire2.write(0xF9);
-    ret = Wire2.endTransmission();
-    if (ret != 0) {
-      Serial.println("Error during write measurement mode command");
-    }
-
-    Timer1.pause(); //menghentikan timer, sehingga pompa berhenti
-
+    stop_sensor_and_pump();
     delay(999999);
   }
 }
@@ -208,7 +170,6 @@ void init_timer() {
   Timer1.setPeriod(1000000 / (2 * (unsigned long)frekuensi));
   Timer1.refresh();
   Timer1.resume();
-
   return;
 }
 
@@ -234,6 +195,7 @@ void get_flow() {
 
   signed_flow_value = (int16_t) sensor_flow_value;
   scaled_flow_value = ((float) signed_flow_value) / SCALE_FACTOR_FLOW * 1000.0;
+  return;
 }
 
 void soft_reset() {
@@ -278,18 +240,149 @@ void pumpStepSignal() {
   }
 }
 
+void pid_control() {
+  // Hitung waktu sampling
+  sample_time = float(millis());  // Mendapatkan waktu pada saat tegangan berhasil dicuplik
+  delta_time = sample_time - last_time;   // Menghitung beda waktu antara waktu cuplik sekarang dengan waktu cuplik sebelumnya
+  last_time = sample_time; // Menyimpan waktu cuplik sekarang agar dapat digunakan di pencuplikan berikutnya
+  sample_time = delta_time / 1000.0;
+
+  // Dapatkan nilai laju aliran saat ini
+  get_flow();
+
+  if ((aux_value & 1) == 1) {
+    scaled_flow_value = 0.0;
+  }
+
+  // Hitung jumlah volume fluida
+  if (set_flow > 0) {
+    totalizer += ((scaled_flow_value + last_flow) / 2.0 * (sample_time) / 60.0);
+  }
+  else if (set_flow < 0) {
+    totalizer -= ((scaled_flow_value + last_flow) / 2.0 * (sample_time) / 60.0);
+  }
+  last_flow = scaled_flow_value;
+
+  // Hitung laju aliran rata-rata berjalan
+  ema = EMA_function(ema_a, scaled_flow_value, ema);
+
+  // Hitung laju aliran rata-rata setiap saat
+  count++;
+  mean = mean + (scaled_flow_value - mean) / count;
+  
+  // Hitung PID
+  error_now = realtime_flow - scaled_flow_value;  // Menghitung nilai error saat ini
+  if ((iteration > 2) && ((aux_value & 1) != 1)) {    // Menjaga-jaga agar nilai u_now tidak "kacau" pada saat mikrokontroler menyala
+    // Perhitungan nilai sinyal PWM dengan PID
+    u_now = (error_now * (kp + (ki*sample_time/2.0))) + (error_past_1 * ((-kp) + (ki*sample_time/2.0))) + last_u;
+  } else {
+    u_now = 0.0;
+  }
+
+  // Ubah nilai frekuensi
+  if (set_flow > 0) {
+    if (frekuensi + u_now > f_max) {
+        frekuensi = f_max;
+    } else if (frekuensi + u_now <= f_min) {
+        frekuensi = f_min;
+    } else frekuensi += u_now;
+    Timer1.setPeriod(1000000 / (2 * (unsigned long)frekuensi));
+  } else if (set_flow < 0) {
+    if (frekuensi - u_now > f_max) {
+        frekuensi = f_max;
+    } else if (frekuensi - u_now <= f_min) {
+        frekuensi = f_min;
+    } else frekuensi -= u_now;
+    Timer1.setPeriod(1000000 / (2 * (unsigned long)frekuensi));
+  }
+
+  // Menyimpan nilai-nilai saat ini agar dapat digunakan di perhitungan selanjutnya
+  last_u = u_now;
+  error_past_1 = error_now;
+  error_past_2 = error_past_1;
+
+  // Check set point
+  if (((mean < set_flow) && (set_flow > 0)) || ((mean > set_flow) && (set_flow < 0))) {
+    check_set_point();
+  } else {
+    realtime_flow = set_flow;
+  }
+
+  iteration++;
+  delay(5);
+}
+
 float check_max_freq() {
   // Set maksimum frekuensi berdasarkan set point
-  if ((set_flow > 180.0) || (set_flow < -180.0)) {
+  if ((set_flow > 140.0) || (set_flow < -140.0)) {
     return 800.0;
-  } else if ((set_flow > 140.0) || (set_flow < -140.0)) {
+  } else if ((set_flow > 120.0) || (set_flow < -120.0)) {
     return 600.0;
   }
-  else {
+  else if ((set_flow > 75.0) || ((set_flow) < -75.0)) {
     return 400.0;
+  }
+  else if ((set_flow >= 25.0) || ((set_flow) <= -25.0)) {
+    return 175.0;
+  }
+  else {
+    return 100.0;
   }
 }
 
 float EMA_function(float alpha, float latest, float stored) {
   return (alpha*latest) + ((1-alpha)*stored);
+}
+
+void check_set_point() {
+  time = millis()/1000.0;
+  if (((time - last_check) > 4.0) && ((aux_value & 1) != 1)) {
+    if (set_flow > 0) {
+      realtime_flow += 1.0;
+    }
+    else if (set_flow < 0) {
+      realtime_flow -= 1.0;
+    }
+    last_check = time;
+  }
+  return;
+}
+
+void write_data() {
+    time = millis()/1000.0;
+      // Catat nilai-nilai pengukuran
+    Serial.print(time, 3);
+    Serial.print(",");
+    Serial.print(scaled_flow_value);
+    Serial.print(",");
+    Serial.print(frekuensi);
+    Serial.print(",");
+    Serial.print(error_now);
+    Serial.print(",");
+    Serial.print(u_now);
+    Serial.print(",");
+    Serial.print(ema);
+    Serial.print(",");
+    Serial.print(mean);
+    Serial.print(",");
+    Serial.print(totalizer);
+    Serial.print(",");
+    Serial.print(aux_value & 1);
+    Serial.print(",");
+    Serial.print(realtime_flow);
+    Serial.println("");
+    return;
+}
+
+void stop_sensor_and_pump() {
+  // Kirim data 0x3FF9 untuk menghentikan pengukuran pada sensor
+    Wire2.beginTransmission(ADDRESS);
+    Wire2.write(0x3F);
+    Wire2.write(0xF9);
+    ret = Wire2.endTransmission();
+    if (ret != 0) {
+      Serial.println("Error during write measurement mode command");
+    }
+
+    Timer1.pause(); //menghentikan timer, sehingga pompa berhenti
 }
