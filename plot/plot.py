@@ -220,7 +220,7 @@ elif int(sys.argv[2]) == 2:
 
     plt.show()
 elif int(sys.argv[2]) == 3:
-    fig, ax = plt.subplots(3,1)
+    fig, ax = plt.subplots(2,1)
     ax[0].set_title("Flow Rate Measurement")
     ax[0].plot(t_plt, data['Flow Rate (uL/min)'], 'r-', label='Realtime Flow Rate')
 
@@ -242,20 +242,6 @@ elif int(sys.argv[2]) == 3:
     ax[1].set_ylabel('Frequency [Hz]/Flow Rate')
     ax[1].grid(True)
     ax[1].legend()
-
-    ax[2].set_title("Dispensed Volume")
-    if "Volume Dispensed (uL)" in data:
-        ax[2].plot(t_plt, data["Volume Dispensed (uL)"], 'b-', label='Volume Dispensed')
-    else:
-        ax[2].plot(t_plt, vol_dispensed, 'b-', label='Volume Dispensed')
-
-    if "test_vol" in data:
-        ax[2].plot(t_plt, data["test_vol"], 'r-', label='Volume Dispensed (from average)')
-
-    ax[2].set_xlabel('Time [sec]')
-    ax[2].set_ylabel('Volume [uL]')
-    ax[2].grid(True)
-    ax[2].legend()
 
     fig.tight_layout()
 
