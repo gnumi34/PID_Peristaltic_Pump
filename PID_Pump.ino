@@ -68,12 +68,13 @@ float delta_time;
 int iteration = 0;
 float f_max;
 float f_min = 25.0;
-float frekuensi = 5;
+float frekuensi = 100.0;
 
 // Masukkan nilai parameter yang diinginkan di sini
-float kp = 0.1;
-float ki = 0.0075;
-float set_flow = 150.0;
+float kp = 0.5;
+float ki = 0.25;
+float kd = 0.00008;
+float set_flow = -1000.0;
 float realtime_flow = set_flow;
 float last_check = 0.0;
 
@@ -111,26 +112,12 @@ void setup() {
   pinMode(PUMP_STEP, OUTPUT); // STEP input
   pinMode(PUMP_DIR, OUTPUT); // DIR input
 
+  // Atur arah putaran pompa berdasarkan nilai set point laju aliran
   if (set_flow < 0) {
     digitalWrite(PUMP_DIR, HIGH);
   }
   else if (set_flow > 0) {
     digitalWrite(PUMP_DIR, LOW);
-  }
-
-  if (set_flow < 100.0) {
-    kp = 0.2;
-  }
-  else {
-    kp = 0.4;
-  }
-
-  if (set_flow < 50) {
-    ki = 0.2;
-  }
-
-  if (set_flow >= 90) {
-    ki = (0.00886 * set_flow) - 0.70714;
   }
 
   init_timer();
@@ -148,9 +135,9 @@ void loop() {
     write_data();
  
     // Function for volume check
-    // if (totalizer > set_flow) {
-    //   stop = true;
-    // }
+    if (totalizer > fabs(set_flow)) {
+      stop = true;
+    }
     
     if (digitalRead(PA12) == LOW) {
         stop = true;
@@ -181,6 +168,8 @@ void get_flow() {
   Wire2.requestFrom(ADDRESS, 9);
   if (Wire2.available() < 9) {
     scaled_flow_value = 0.0;
+    aux_value = 3;
+    return;
   }
 
   sensor_flow_value  = Wire2.read() << 8; // read the MSB from the sensor
@@ -266,15 +255,17 @@ void pid_control() {
   // Hitung laju aliran rata-rata berjalan
   ema = EMA_function(ema_a, scaled_flow_value, ema);
 
-  // Hitung laju aliran rata-rata setiap saat
-  count++;
-  mean = mean + (scaled_flow_value - mean) / count;
+  // Hitung laju aliran rata-rata setiap saat (hanya bila ada fluida)
+  if ((aux_value & 1) != 1) {
+    count++;
+    mean = mean + (scaled_flow_value - mean) / count;
+  }
   
   // Hitung PID
   error_now = realtime_flow - scaled_flow_value;  // Menghitung nilai error saat ini
   if ((iteration > 2) && ((aux_value & 1) != 1)) {    // Menjaga-jaga agar nilai u_now tidak "kacau" pada saat mikrokontroler menyala
     // Perhitungan nilai sinyal PWM dengan PID
-    u_now = (error_now * (kp + (ki*sample_time/2.0))) + (error_past_1 * ((-kp) + (ki*sample_time/2.0))) + last_u;
+    u_now = (error_now * (kp + (ki*sample_time/2.0) + (kd/sample_time))) + (error_past_1 * ((-kp) + (ki*sample_time/2.0) - (kd/sample_time))) + (error_past_2 * (kd/sample_time)) + last_u;
   } else {
     u_now = 0.0;
   }
@@ -297,9 +288,12 @@ void pid_control() {
   }
 
   // Menyimpan nilai-nilai saat ini agar dapat digunakan di perhitungan selanjutnya
-  last_u = u_now;
-  error_past_1 = error_now;
-  error_past_2 = error_past_1;
+  if ((aux_value & 1) == 0) {
+    last_u = u_now;
+    error_past_1 = error_now;
+    error_past_2 = error_past_1;
+  }
+  
 
   // Check set point
   if (((mean < set_flow) && (set_flow > 0)) || ((mean > set_flow) && (set_flow < 0))) {
@@ -314,18 +308,37 @@ void pid_control() {
 
 float check_max_freq() {
   // Set maksimum frekuensi berdasarkan set point
-  if ((set_flow > 140.0) || (set_flow < -140.0)) {
-    return 800.0;
-  } else if ((set_flow > 120.0) || (set_flow < -120.0)) {
-    return 600.0;
-  }
-  else if ((set_flow > 75.0) || ((set_flow) < -75.0)) {
-    return 400.0;
-  }
-  else if ((set_flow >= 25.0) || ((set_flow) <= -25.0)) {
+  if ((set_flow >= 900.0) || (set_flow <= -900.0)) {
+    return set_flow + 2100.0;
+  } else if ((set_flow >= 800.0) || (set_flow <= -800.0)) {
+    return set_flow + 1750.0;
+  } else if ((set_flow >= 700.0) || (set_flow <= -700.0)) {
+    return set_flow + 1400.0;
+  } else if ((set_flow >= 600.0) || (set_flow <= -600.0)) {
+    return set_flow + 1200.0;
+  } else if ((set_flow >= 500.0) || (set_flow <= -500.0)) {
+    return set_flow + 1000.0;
+  } else if ((set_flow >= 400.0) || (set_flow <= -400.0)) {
+    return set_flow + 900.0;
+  } else if ((set_flow >= 300.0) || (set_flow <= -300.0)) {
+    return set_flow + 800.0;
+  } else if ((set_flow >= 200.0) || (set_flow <= -200.0)) {
+    return set_flow + 650.0;
+  } else if ((set_flow >= 175.0) || (set_flow <= -175.0)) {
+    return 650.0;
+  } else if ((set_flow >= 150.0) || (set_flow <= -150.0)) {
+    return 550.0;
+  } else if ((set_flow >= 125.0) || (set_flow <= -125.0)) {
+    return 450.0;
+  } else if ((set_flow >= 100.0) || (set_flow <= -100.0)) {
+    return 375.0;
+  } else if ((set_flow >= 70.0) || ((set_flow) <= -70.0)) {
+    return 300.0;
+  } else if ((set_flow >= 50.0) || ((set_flow) <= -50.0)) {
+    return 225.0;
+  } else if ((set_flow >= 25.0) || ((set_flow) <= -25.0)) {
     return 175.0;
-  }
-  else {
+  } else {
     return 100.0;
   }
 }
@@ -336,7 +349,7 @@ float EMA_function(float alpha, float latest, float stored) {
 
 void check_set_point() {
   time = millis()/1000.0;
-  if (((time - last_check) > 4.0) && ((aux_value & 1) != 1)) {
+  if (((time - last_check) > 2.0) && ((aux_value & 1) != 1)) {
     if (set_flow > 0) {
       realtime_flow += 1.0;
     }
