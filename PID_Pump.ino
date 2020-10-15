@@ -11,8 +11,8 @@
 /** Keterangan fungsi:
  * void init_timer() : inisialisasi timer
  * void get_flow() : mendapatkan data laju aliran dan data air-in-line flag dari sensor
- * void soft_reset() : melakukan soft reset pada sensor
- * void start_measure() : memberikan perintah memulai pengukuran
+ * void sensor_soft_reset() : melakukan soft reset pada sensor
+ * void sensor_start_measure() : memberikan perintah memulai pengukuran
  * void pumpStepSignal() : memberikan sinyal untuk pompa peristaltik jenis stepper
  * void pid_control() : algoritma pengendali PID utama (beserta perhitungan volume dan rata-rata laju aliran)
  * float check_max_freq() : melakukan pengecekan frekuensi maksimum pompa yang diperbolehkan berdasarkan nilai set point
@@ -39,8 +39,8 @@
 #include <Wire.h>
 #include <math.h>
 
-#define PUMP_STEP PB8
-#define PUMP_DIR PB7
+#define PUMP_STEP PB3
+#define PUMP_DIR PB4
 
 int ret;
 bool stop = false;
@@ -74,7 +74,7 @@ float frekuensi = 100.0;
 float kp = 0.5;
 float ki = 0.25;
 float kd = 0.00008;
-float set_flow = -1000.0;
+float set_flow = 100.0;
 float realtime_flow = set_flow;
 float last_check = 0.0;
 
@@ -95,8 +95,8 @@ TwoWire Wire2 (2,0,100000);
 // Function Declaration
 void init_timer();
 void get_flow();
-void soft_reset();
-void start_measure();
+void sensor_soft_reset();
+void sensor_start_measure();
 void pumpStepSignal();
 void pid_control();
 float check_max_freq();
@@ -121,12 +121,12 @@ void setup() {
   }
 
   init_timer();
-  soft_reset();
-  start_measure();
+  sensor_soft_reset();
+  sensor_start_measure();
 
   f_max = check_max_freq();  
 
-  Serial.println("Time (s),Flow Rate (uL/min),Frequency,Error,U_Now,Moving Average Flow Rate (uL/min),Average Flow Rate (uL/min),Volume Dispensed (uL),Bubble Flag,Realtime SP");
+  Serial.println("Time (s),Flow Rate (uL/min),Frequency,Error,U_Now,Moving Average Flow Rate (uL/min),Average Flow Rate (uL/min),Volume Dispensed (uL),Bubble Flag,Sample Time");
 }
 
 void loop() {
@@ -187,7 +187,7 @@ void get_flow() {
   return;
 }
 
-void soft_reset() {
+void sensor_soft_reset() {
   do {
     // Soft reset the sensor
     Wire2.beginTransmission(0x00);
@@ -202,7 +202,7 @@ void soft_reset() {
   return;
 }
 
-void start_measure() {
+void sensor_start_measure() {
   do {
     Wire2.beginTransmission(ADDRESS);
     Wire2.write(0x36);
@@ -307,17 +307,18 @@ void pid_control() {
 }
 
 float check_max_freq() {
-  // Set maksimum frekuensi berdasarkan set point
-  if ((set_flow >= 900.0) || (set_flow <= -900.0)) {
+  if ((set_flow >= 1000.0) || (set_flow <= -1000.0)) {
+    return set_flow + 2400.0;
+  } else if ((set_flow >= 900.0) || (set_flow <= -900.0)) {
     return set_flow + 2100.0;
   } else if ((set_flow >= 800.0) || (set_flow <= -800.0)) {
     return set_flow + 1750.0;
   } else if ((set_flow >= 700.0) || (set_flow <= -700.0)) {
-    return set_flow + 1400.0;
+    return set_flow + 1500.0;
   } else if ((set_flow >= 600.0) || (set_flow <= -600.0)) {
-    return set_flow + 1200.0;
+    return set_flow + 1300.0;
   } else if ((set_flow >= 500.0) || (set_flow <= -500.0)) {
-    return set_flow + 1000.0;
+    return set_flow + 1100.0;
   } else if ((set_flow >= 400.0) || (set_flow <= -400.0)) {
     return set_flow + 900.0;
   } else if ((set_flow >= 300.0) || (set_flow <= -300.0)) {
@@ -382,7 +383,7 @@ void write_data() {
     Serial.print(",");
     Serial.print(aux_value & 1);
     Serial.print(",");
-    Serial.print(realtime_flow);
+    Serial.print(sample_time, 3);
     Serial.println("");
     return;
 }
