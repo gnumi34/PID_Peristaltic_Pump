@@ -6,4 +6,5 @@ Dirancang untuk sistem dengan mikrokontroler STM32F103C6 (Blue Pill), FT232RL US
 
 Data dapat direkam dengan menggunakan PuTTY atau aplikasi perekam data dari Serial Monitor yang lain dan disimpan dalam bentuk CSV.
 
-Untuk membuat plot dari data yang telah diukur, jalankan file Plot.py dengan Python dengan perintah `python Plot.py file_csv` (pastikan telah meng-install library yang diperlukan terlebih dahulu pada requirements.txt)
+Untuk membuat plot dari data yang telah diukur, jalankan file Plot.py dengan Python dengan perintah `plot.py file_csv mode_number`
+(pastikan telah meng-install library yang diperlukan terlebih dahulu pada requirements.txt dengan 'pip3 install -r requirements.txt')
