@@ -9,4 +9,5 @@ Data dapat direkam dengan menggunakan PuTTY atau aplikasi perekam data dari Seri
 Untuk membuat plot dari data yang telah diukur, jalankan file Plot.py dengan Python dengan perintah `plot.py file_csv mode_number`
 (pastikan telah meng-install library yang diperlukan terlebih dahulu pada requirements.txt dengan 'pip3 install -r requirements.txt')
 
-Program digunakan untuk Tugas Akhir Teknik Elektro ITB "*Sistem Pompa untuk Pemrosesan Sampel pada Platform Mikrofluida*".
+Program digunakan sebagai bagian dari Tugas Akhir Teknik Elektro ITB "*Sistem Pompa untuk Pemrosesan Sampel pada Platform Mikrofluida*".
+![picture of pump system](https://i.ibb.co/FKqknvx/produk-resized.jpg)
